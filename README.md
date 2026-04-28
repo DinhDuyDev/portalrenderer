@@ -1,2 +1,2 @@
-# bsynd
-Project Bsynd
+# Simple Raycaster
+A Simple Raycaster written in C with SDL.
