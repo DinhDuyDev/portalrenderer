@@ -12,14 +12,14 @@
 #include "g_textures.h"
 #include "p_playervariables.c"
 
-#define SHADE 150.0
+#define SHADE 75.0
 
 
 int worldmap[LEVEL_HEIGHT][LEVEL_WIDTH] = {
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1,},
     {1, 0, 0, 0, 0, 0, 0, 0, 0, 1,},
     {1, 0, 1, 0, 0, 1, 1, 1, 1, 1,},
-    {1, 0, 1, 0, 0, 0, 0, 0, 0, 1,},
+    {1, 0, 0, 1, 0, 0, 0, 0, 0, 1,},
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1,},
 };
 
@@ -27,7 +27,7 @@ float zmap[LEVEL_HEIGHT][LEVEL_WIDTH] = {
     {5., 5., 5., 5., 5., 5., 5., 5., 5., 5.,},
     {5., 0., 0., 0., 0., 0., 0., 0., 0., 5.,},
     {5., 0., 3., 0., 0., .2, .3, .4, .5, 5.,},
-    {5., 0., .5, 0., 0., 0., 0., 0., 0., 5.,},
+    {5., 0., 0.,.35, 0., 0., 0., 0., 0., 5.,},
     {5., 5., 5., 5., 5., 5., 5., 5., 5., 5.,},
 };
 
@@ -50,7 +50,7 @@ int main(void) {
 
     /* camera */
     P_PlayerState playerstate = P_InitializePlayerState();
-    E_GameEntity playerentity = {.x = 112, .y = 112, .z = 64, .w = 16, .h = 16};
+    E_GameEntity playerentity = {.x = 144, .y = 112, .z = 64, .w = 16, .h = 16};
 
     int resolution = 320;
 
@@ -124,8 +124,9 @@ int main(void) {
 
     if (SDL_LockTexture(screen_texture, NULL, (void*) &pixels, &pitch)) {
         pnum = pitch / 4;
-        printf("Size of pixel buffer: %lu\n", sizeof(pixels));
-        printf("Pitch value of texture buffer: %d\n", pitch);
+        printf("Init Screen:\n");
+        printf("\tSize of pixel buffer: %lu\n", sizeof(pixels));
+        printf("\tPitch value of texture buffer: %d\n", pitch);
     } else {
         SDL_Log("Failed to lock screen texture! Error: %s", SDL_GetError());
         SDL_Quit();
@@ -178,7 +179,7 @@ int main(void) {
         /* capping */
         if (playerstate.zlook > playerstate.max_zlook) {
             playerstate.zlook = playerstate.max_zlook;
-        } 
+        }
         if (playerstate.zlook < -playerstate.max_zlook) {
             playerstate.zlook = -playerstate.max_zlook;
         }
@@ -310,12 +311,17 @@ int main(void) {
 
         /* raycast */
         for (int i = 0; i < resolution; i ++) {
-            int MAXWALL = 14;
+
+            /// @concept: MAYBE THE HEIGHT FOR WHICH THE WALL SHOULD BE OBSCURED NEED TO BE THE HIGHEST HEIGHT WE SAW IN A STRIP GOING OUT.
+            /// @protocol: Casting ray, then find the highest height seen. When the wall of that height is reached, then start to obscure everything else.
+            /// @concept: 
+            int MAXWALL = 20;
             int wallbuff[MAXWALL];
             float heightbuff[MAXWALL];
             int texbuff[MAXWALL];
             int sidebuff[MAXWALL];
             int geometrybuff[MAXWALL];
+            int walltop[MAXWALL];
             int wallcount = 0;
             float previous_height = 0;
 
@@ -358,6 +364,7 @@ int main(void) {
             
             int steps = 0;
             int hasHitWall = 0;
+
             while (hit == 0) {
                 /* tracing */
                 if (sideDistX < sideDistY) {
@@ -380,15 +387,6 @@ int main(void) {
                     if (wallcount < MAXWALL) {
                         int canview = 1;
 
-                        // if (wallcount > 0) {
-                        //     if (zmap[mapPosY][mapPosX] > heightbuff[wallcount-1]) {
-                        //         canview = 0;
-                        //     }
-                        // }
-
-                        if (wallcount > 0) {
-                            previous_height = heightbuff[wallcount-1];
-                        }
                         if (side == 0)
                             perpWallDist = fabs(sideDistX - deltaDistX);
                         else
@@ -407,12 +405,34 @@ int main(void) {
                         if (side == 1 && rayDirY > 0) texX = tex_width - texX - 1;
 
                         int height = SDL_min(RAYCAST_SIZE_SCALE / (perpWallDist * 2), 1280);
-                        wallbuff[wallcount] = height;
-                        texbuff[wallcount] = texX;
-                        sidebuff[wallcount] = side;
-                        heightbuff[wallcount] = zmap[mapPosY][mapPosX];
-                        geometrybuff[wallcount] = worldmap[mapPosY][mapPosX];
-                        wallcount ++;
+                        
+                        int innerWall = 1;
+                        if (wallcount > 0) { /// Two walls at the same place
+                            previous_height = heightbuff[wallcount-1];
+                            if (wallcount < MAXWALL && geometrybuff[wallcount-1]) {
+                                wallbuff[wallcount] = height;
+                                heightbuff[wallcount] = previous_height;
+                                texbuff[wallcount] = texX;
+                                sidebuff[wallcount] = side;
+                                geometrybuff[wallcount] = worldmap[mapPosY][mapPosX];
+
+                                if (geometrybuff[wallcount-1] != 0) {/* if previously there was a wall, then only the top rim of the wall should be drawn*/
+                                    walltop[wallcount] = 1;
+                                }
+                                wallcount ++;
+                            }
+                        }
+
+                        if (wallcount < MAXWALL && innerWall) {
+                            wallbuff[wallcount] = height;
+                            texbuff[wallcount] = texX;
+                            sidebuff[wallcount] = side;
+                            heightbuff[wallcount] = zmap[mapPosY][mapPosX];
+                            geometrybuff[wallcount] = worldmap[mapPosY][mapPosX];
+                            walltop[wallcount] = 0;
+                            wallcount ++;
+                        }
+                        // break;
                     } else {break;}
                 }
 
@@ -445,35 +465,28 @@ int main(void) {
                 int x = resolution - i - 1;
 
                 if (w > 0) {
-                    // if (geometrybuff[w - 1] == 1 && geometrybuff[w] == 0) {
-                    //     prevWallHeight = heightbuff[w-1];
-                    // } else {
-                    //     // prevWallHeight = 0;
-                    //     if (geometrybuff[w] == 0) {
-                    //         prevWallHeight = 0;
-                    //     } else {
-                    //         prevWallHeight = heightbuff[w-1];
-                    //     }
-                    // }
                     prevWallHeight = heightbuff[w-1];
                 }
                 
                 /* floor rendering */
-                // for (int y = (int) renderHeight/2 + height/2 - playerstate.zlook - prevWallHeight * height ; y < renderHeight; y ++) {
-                //     if (y > 0) {
-                //         if (filled[y * renderWidth + x]) {
-                //             break;
-                //         }
-                //         if (wallheight > 0.1) {
-                //             pixels[y * renderWidth + x] = 0xffaaaaaa;
-                //         }
-                //     }
-                // }
+                int wallTopLimit = (w > 0) ? ((heightbuff[w-1] > heightbuff[w]) ? 0 : walltop[w]) : walltop[w];
+
+                for (int y = (int) renderHeight/2 + height/2 - playerstate.zlook - prevWallHeight * height - wallTopLimit; y < renderHeight; y ++) {
+                    if (y > 0) {
+                        if (filled[y * renderWidth + x]) {
+                            break;
+                        }
+                        if (wallheight > 0.1) {
+                            pixels[y * renderWidth + x] = 0xffaaaaaa;
+                            filled[y * renderWidth + x] = true;
+                        }
+                    }
+                }
 
                 /* mult part */
                 while (mult > 0) {
                     if (renderHeight/2 + height/2 - z_offset * height - playerstate.zlook > 0) {
-                        for (int y = (int) renderHeight/2 - height/2 - z_offset * height; y < renderHeight/2 + height/2 - z_offset * height && y < renderHeight/2 + height/2 - prevWallHeight * height; y ++) {
+                        for (int y = (int) renderHeight/2 - height/2 - z_offset * height; y < renderHeight/2 + height/2 - z_offset * height && y < renderHeight/2 + height/2; y ++) {
                             if (y - (int) playerstate.zlook >= 0 && y - (int) playerstate.zlook < renderHeight && x >= 0 && x < renderWidth) {
                                 if (filled[(y - (int) playerstate.zlook) * renderWidth + x]) {
                                     break;
@@ -491,6 +504,7 @@ int main(void) {
                                 }
                             }
                         }
+                        wallTopLimit = 0;
                     } else {
                         break;
                     }
@@ -501,7 +515,9 @@ int main(void) {
                 /* frac part */
                 int fracHeight = frac * height;
                 if (fracHeight > 0.01) {
-                    for (int y = (int) renderHeight/2 - height/2 - z_offset * height + (height-fracHeight); y < renderHeight/2 + height/2 - z_offset * height && y < renderHeight/2 + height/2 - prevWallHeight * height; y ++) {//- prevWallHeight * height; y ++) {
+                    int y;
+                    if ((w > 0) ? (heightbuff[w] >= heightbuff[w-1]) : true)
+                    for (y = (int) renderHeight/2 - height/2 - z_offset * height + (height-fracHeight); y < renderHeight/2 + height/2 - z_offset * height && y < renderHeight/2 + height/2; y ++) {
                         if (y - (int) playerstate.zlook >= 0 && y - (int) playerstate.zlook < renderHeight && x >= 0 && x < renderWidth) {
                             if (filled[(y - (int) playerstate.zlook) * renderWidth + x]) {
                                 break;
@@ -515,8 +531,11 @@ int main(void) {
                                 u_int32_t r, g, b, a;
                                 G_GetARGBColor(color, &r, &g, &b, &a);
                                 u_int32_t darker = G_MakeARGB32BitFormat(r - SHADE, g - SHADE, b - SHADE, a);
-                                pixels[(y - (int) playerstate.zlook) * pnum + x] = (side_ == 0) ? color : darker;
+                                pixels[(y - (int) playerstate.zlook) * pnum + x] = (!side_) ? color : darker; //(!wallTopLimit) ? color : 0xff00ffff; //(!side_) ? color : darker;
                                 filled[(y - (int) playerstate.zlook) * pnum + x] = true;
+                            }
+                            if (wallTopLimit) {
+                                break;
                             }
                         }
                     }
