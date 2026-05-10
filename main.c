@@ -12,7 +12,7 @@
 #include "g_textures.h"
 #include "p_playervariables.c"
 
-#define SHADE 75.0
+#define SHADE 150.0
 
 
 int worldmap[LEVEL_HEIGHT][LEVEL_WIDTH] = {
@@ -26,7 +26,7 @@ int worldmap[LEVEL_HEIGHT][LEVEL_WIDTH] = {
 float zmap[LEVEL_HEIGHT][LEVEL_WIDTH] = {
     {5., 5., 5., 5., 5., 5., 5., 5., 5., 5.,},
     {5., 0., 0., 0., 0., 0., 0., 0., 0., 5.,},
-    {5., 0., 3., 0., 0., .2, .3, .4, .5, 5.,},
+    {5., 0., 3., 0., 0., .2, .3, 5.2, .5, 5.,},
     {5., 0., 0.,.35, 0., 0., 0., 0., 0., 5.,},
     {5., 5., 5., 5., 5., 5., 5., 5., 5., 5.,},
 };
@@ -194,8 +194,14 @@ int main(void) {
         playerentity.vsp = lerp(playerentity.vsp, forward * playerstate.dirY + sides * playerstate.planeY, 0.3);
 
         if (key_states[SDL_SCANCODE_E]) {
-            playerstate.zlook = 0;
+            // playerstate.zlook = 0;
             playerstate.fov_mult = 1.0;
+            playerentity.z = lerp(playerentity.z, 32, 0.2);
+        } else {
+            // playerentity.z = lerp(playerentity.z, 0, 0.2);
+            int mapPosX = (int) (playerentity.x / tilesize);
+            int mapPosY = (int) (playerentity.y / tilesize);
+            playerentity.z = lerp(playerentity.z, zmap[mapPosY][mapPosX] * tilesize, 0.2);
         }
 
         /* collisions */
@@ -223,19 +229,20 @@ int main(void) {
                 }
             }
         }
-        for (int c = 0; c < count; c ++) {
-            SDL_FRect hb = surroundingHBs[c];
-            hitbox.x = topleftX + playerentity.hsp;
-            if (rect_collide(&hitbox, &hb)) {
-                playerentity.hsp = 0;
-            }
-            hitbox.x = topleftX;
-            hitbox.y = topleftY + playerentity.vsp;
-            if (rect_collide(&hitbox, &hb)) {
-                playerentity.vsp = 0;
-            }
-            hitbox.y = topleftY;
-        }
+        // for (int c = 0; c < count; c ++) {
+        //     SDL_FRect hb = surroundingHBs[c];
+        //     hitbox.x = topleftX + playerentity.hsp;
+        //     if (rect_collide(&hitbox, &hb)) {
+        //         playerentity.hsp = 0;
+        //     }
+        //     hitbox.x = topleftX;
+        //     hitbox.y = topleftY + playerentity.vsp;
+        //     if (rect_collide(&hitbox, &hb)) {
+        //         playerentity.vsp = 0;
+        //     }
+        //     hitbox.y = topleftY;
+        // }
+
 
         playerentity.x += playerentity.hsp;
         playerentity.y += playerentity.vsp;
@@ -309,12 +316,26 @@ int main(void) {
         //     }
         // }
 
+        /*** 
+         * @concept: Wall obscuration PSEUDOCODE:
+         * yMinimum = renderHeight;
+         * for i = 0 to wallcount - 1
+         *      if yColumn < yMinimum:
+         *          yMinimum = yColumn
+         *          render wall from yMinimum
+         *          set filled to true.
+         *      else:
+         *          break
+         * @concept: allows correct rendering of stairs.
+        */
+
         /* raycast */
         for (int i = 0; i < resolution; i ++) {
 
             /// @concept: MAYBE THE HEIGHT FOR WHICH THE WALL SHOULD BE OBSCURED NEED TO BE THE HIGHEST HEIGHT WE SAW IN A STRIP GOING OUT.
             /// @protocol: Casting ray, then find the highest height seen. When the wall of that height is reached, then start to obscure everything else.
             /// @concept: 
+            
             int MAXWALL = 20;
             int wallbuff[MAXWALL];
             float heightbuff[MAXWALL];
@@ -360,12 +381,33 @@ int main(void) {
                 sideDistY = (double) (mapPosY + 1.0 - posY) * deltaDistY;
             }
 
-            /* NEW WALL BUFFER SYSTEM */
+
+            side = (sideDistX >= sideDistY);
+
+            if (side == 0)
+                perpWallDist = fabs(sideDistX);
+            else
+                perpWallDist = fabs(sideDistY);
+
+            int height = SDL_min(RAYCAST_SIZE_SCALE / (perpWallDist * 2), 1280);
+
+            /* if current block is a wall */
+            if (worldmap[mapPosY][mapPosX] != 0) {
+                wallbuff[wallcount] = height;
+                texbuff[wallcount] = 0;
+                sidebuff[wallcount] = side;
+                heightbuff[wallcount] = zmap[mapPosY][mapPosX];
+                geometrybuff[wallcount] = 0;
+                walltop[wallcount] = 1;
+                wallcount ++;
+            }
             
-            int steps = 0;
+            /* NEW WALL BUFFER SYSTEM */
+
             int hasHitWall = 0;
 
-            while (hit == 0) {
+            while (!hit) {
+
                 /* tracing */
                 if (sideDistX < sideDistY) {
                     sideDistX += deltaDistX;
@@ -392,7 +434,7 @@ int main(void) {
                         else
                             perpWallDist = fabs(sideDistY - deltaDistY);
                         
-                        float wallX;
+                        float wallX = 0.0;
                         if (side == 0)
                             wallX = posY + perpWallDist * rayDirY;
                         else
@@ -406,10 +448,9 @@ int main(void) {
 
                         int height = SDL_min(RAYCAST_SIZE_SCALE / (perpWallDist * 2), 1280);
                         
-                        int innerWall = 1;
-                        if (wallcount > 0) { /// Two walls at the same place
+                        if (wallcount > 0) { // For each wall, if there is a previous wall that is occupied by a cell
                             previous_height = heightbuff[wallcount-1];
-                            if (wallcount < MAXWALL && geometrybuff[wallcount-1]) {
+                            if (wallcount < MAXWALL && geometrybuff[wallcount-1]) { // && geometrybuff[wallcount-1]) {
                                 wallbuff[wallcount] = height;
                                 heightbuff[wallcount] = previous_height;
                                 texbuff[wallcount] = texX;
@@ -423,7 +464,7 @@ int main(void) {
                             }
                         }
 
-                        if (wallcount < MAXWALL && innerWall) {
+                        if (wallcount < MAXWALL) {
                             wallbuff[wallcount] = height;
                             texbuff[wallcount] = texX;
                             sidebuff[wallcount] = side;
@@ -432,7 +473,7 @@ int main(void) {
                             walltop[wallcount] = 0;
                             wallcount ++;
                         }
-                        // break;
+
                     } else {break;}
                 }
 
@@ -441,12 +482,6 @@ int main(void) {
                     hit = 1;
                 }
             }
-            
-            // printf("Wallcount: %d\t", wallcount);
-            // for (int ptr = 0; ptr < wallcount; ptr ++) {
-            //     printf("%f, ", heightbuff[ptr]);
-            // }
-            // printf("\n");
 
             /* drawing on screen */
 
@@ -471,7 +506,7 @@ int main(void) {
                 /* floor rendering */
                 int wallTopLimit = (w > 0) ? ((heightbuff[w-1] > heightbuff[w]) ? 0 : walltop[w]) : walltop[w];
 
-                for (int y = (int) renderHeight/2 + height/2 - playerstate.zlook - prevWallHeight * height - wallTopLimit; y < renderHeight; y ++) {
+                for (int y = (int) renderHeight/2 + height/2 - playerstate.zlook - prevWallHeight * height - wallTopLimit + (playerentity.z / 32.0f) * height; y < renderHeight; y ++) {
                     if (y > 0) {
                         if (filled[y * renderWidth + x]) {
                             break;
@@ -485,15 +520,17 @@ int main(void) {
 
                 /* mult part */
                 while (mult > 0) {
-                    if (renderHeight/2 + height/2 - z_offset * height - playerstate.zlook > 0) {
-                        for (int y = (int) renderHeight/2 - height/2 - z_offset * height; y < renderHeight/2 + height/2 - z_offset * height && y < renderHeight/2 + height/2; y ++) {
+                    if (renderHeight/2 + height/2 - z_offset * height - playerstate.zlook + ((float) playerentity.z / 32.0f) * height > 0) {
+                        for (int y = (int) renderHeight/2 - height/2 - z_offset * height + ((float) playerentity.z / 32.0f) * height; y < renderHeight/2 + height/2 - z_offset * height + ((float) playerentity.z / 32.0f) * height && y < renderHeight/2 + height/2 + ((float) playerentity.z / 32.0f) * height; y ++) {
                             if (y - (int) playerstate.zlook >= 0 && y - (int) playerstate.zlook < renderHeight && x >= 0 && x < renderWidth) {
                                 if (filled[(y - (int) playerstate.zlook) * renderWidth + x]) {
                                     break;
                                 }
                                 int tx, ty;
                                 tx = texX;
-                                ty = ((float) (y - (renderHeight/2 - height/2 - z_offset * height)) / height) * tex_width;
+                                ty = ((float) (y - (renderHeight/2 - height/2 - z_offset * height + ((float) playerentity.z / 32.0f) * height)) / height) * (tex_width-1);
+                                if (tx < 0 || tx > 15 || ty < 0 || ty > 15)
+                                    printf("%d, %d\n", tx, ty);
                                 u_int32_t color = texpixels[ty * texpnum + tx];
                                 if (color != 0) {
                                     u_int32_t r, g, b, a;
@@ -504,7 +541,7 @@ int main(void) {
                                 }
                             }
                         }
-                        wallTopLimit = 0;
+                        // wallTopLimit = 0;
                     } else {
                         break;
                     }
@@ -515,9 +552,10 @@ int main(void) {
                 /* frac part */
                 int fracHeight = frac * height;
                 if (fracHeight > 0.01) {
+                    int step = 0;
                     int y;
                     if ((w > 0) ? (heightbuff[w] >= heightbuff[w-1]) : true)
-                    for (y = (int) renderHeight/2 - height/2 - z_offset * height + (height-fracHeight); y < renderHeight/2 + height/2 - z_offset * height && y < renderHeight/2 + height/2; y ++) {
+                    for (y = (int) renderHeight/2 - height/2 - z_offset * height + (height-fracHeight) + (playerentity.z / 32.0f) * height; y < renderHeight/2 + height/2 - z_offset * height + (playerentity.z / 32.0f) * height && y < renderHeight/2 + height/2 + (playerentity.z / 32.0f) * height; y ++) {
                         if (y - (int) playerstate.zlook >= 0 && y - (int) playerstate.zlook < renderHeight && x >= 0 && x < renderWidth) {
                             if (filled[(y - (int) playerstate.zlook) * renderWidth + x]) {
                                 break;
@@ -525,18 +563,19 @@ int main(void) {
                             /* texture data */
                             int tx, ty;
                             tx = texX;
-                            ty = ((float) (y - (renderHeight/2 - height/2 - z_offset * height + (height-fracHeight))) / height) * tex_height;
+                            ty = ((float) (y - (renderHeight/2 - height/2 - z_offset * height + (height-fracHeight) +  (playerentity.z / 32.0f) * height)) / height) * tex_height;
                             u_int32_t color = texpixels[ty * texpnum + tx];
                             if (color != 0) {
                                 u_int32_t r, g, b, a;
                                 G_GetARGBColor(color, &r, &g, &b, &a);
                                 u_int32_t darker = G_MakeARGB32BitFormat(r - SHADE, g - SHADE, b - SHADE, a);
-                                pixels[(y - (int) playerstate.zlook) * pnum + x] = (!side_) ? color : darker; //(!wallTopLimit) ? color : 0xff00ffff; //(!side_) ? color : darker;
+                                pixels[(y - (int) playerstate.zlook) * pnum + x] = (step == 0 ? 0xff00ffff : (!side_) ? color : darker); //(!wallTopLimit) ? color : 0xff00ffff; //(!side_) ? color : darker;
                                 filled[(y - (int) playerstate.zlook) * pnum + x] = true;
                             }
                             if (wallTopLimit) {
                                 break;
                             }
+                            step ++;
                         }
                     }
                 }

@@ -1,3 +1,7 @@
+/* 
+    Vector based 3d game.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -59,18 +63,18 @@ vec2d M_WorldToScreen(float vx, float vy, int w) {
 }
 
 linedef maplines[] = {
-    // {{-32, -32}, {0, -64}}, // AB
-    // {{0, -64}, {48, -32}}, // BC
-    // {{48, -32}, {16, 32}}, // CD
-    // {{16, 32}, {-16, 48}}, // DE
-    // {{-16, 48}, {-48, 16}}, // FE
-    // {{-48, 16}, {-32, -32}}, // EA
+    {{-32, -32}, {0, -64}}, // AB
+    {{0, -64}, {48, -32}}, // BC
+    {{48, -32}, {16, 32}}, // CD
+    {{16, 32}, {-16, 48}}, // DE
+    {{-16, 48}, {-48, 16}}, // FE
+    {{-48, 16}, {-32, -32}}, // EA
     {{0, 0}, {0, 32}, 0, -24},
     {{0, 32}, {0, 64}, 0, 16},
-    {{0, 64}, {0, 96}, 0, 24},
-    {{0, 96}, {0, 128}, 0, 32},
+    // {{0, 64}, {0, 96}, 0, 24},
+    // {{0, 96}, {0, 128}, 0, 32},
 };
-int maplineN = 4;
+int maplineN = 6;
 
 double normalize_direction(double x) {
     bool norm = true;
@@ -84,6 +88,18 @@ double normalize_direction(double x) {
 
 float vlen_squared(vec2d v) {
     return v.x * v.x + v.y * v.y;
+}
+
+/* compares two lines */
+int linecomp(const void *a, const void *b) {
+    // return ((linedef*) a)->a.y - ((linedef*)b)->a.y;
+    linedef* l_a = (linedef*) a;
+    linedef* l_b = (linedef*) b;
+    
+    int nearest_depth_a = (l_a->a.x + l_a->b.x) / 2; //(l_a->a.y < l_a->b.y) ? l_a->a.y : l_a->b.y;
+    int nearest_depth_b = (l_b->a.x + l_b->b.x) / 2; //(l_b->a.y < l_b->b.y) ? l_b->a.y : l_b->b.y;
+
+    return -(nearest_depth_a - nearest_depth_b);
 }
 
 /* always renders from right to left*/
@@ -116,7 +132,8 @@ void R_RenderWall(u_int32_t *pixbuff, u_int32_t *texture, int pnum, int tnum, in
                 if (i >= 0 && i < h) {
                     int tx = scale_to_original * 288 + ((float) (x2 - x_ptr) / width - scale_to_original) * 288;
                     int ty = ((float) (i - y0) / (y1 - y0)) * 288;
-                    col = texture[ty * tnum + tx];
+                    if (fabs(i-y0) < 3 || fabs(i-y1) < 3 || x_ptr == x1 || x_ptr == x2-1) col = 0xffff00ff;
+                    else col = 0x00000000;
                     pixbuff[i * pnum + x_ptr] = col;
                 } else {
                     if (i >= h) {
@@ -222,7 +239,7 @@ int main(void) {
     SDL_SetWindowRelativeMouseMode(window, true);
 
     SDL_SetDefaultTextureScaleMode(renderer, SDL_SCALEMODE_NEAREST);
-    surface = SDL_LoadSurface("images/marathon-brick.png");
+    surface = SDL_LoadSurface("images/marathon_brick_texture.png");
 
     if (!surface) {
         SDL_Log("Failed to create surface! Error: %s", SDL_GetError());
@@ -293,10 +310,10 @@ int main(void) {
         dt = (currentTick - lastTick) / 100.0f;
         cTick = SDL_GetTicks();
 
-        SDL_GetWindowSizeInPixels(window, &window_width, &window_height);
+        // SDL_GetWindowSizeInPixels(window, &window_width, &window_height);
 
-        window_width_ratio = (float) window_width / W_WIDTH;
-        window_height_ratio = (float) window_height / W_HEIGHT;
+        // window_width_ratio = (float) window_width / W_WIDTH;
+        // window_height_ratio = (float) window_height / W_HEIGHT;
 
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -392,8 +409,10 @@ int main(void) {
         int tex_height = texture->h;
 
         /* drawing maplines */
+        qsort(transformedlines, maplineN, sizeof(linedef), linecomp);
         for (int i = 0; i < maplineN; i ++) {
             linedef line = transformedlines[i];
+            // if (line.a.x > line.b.x) continue;
             if (map) {
                 SDL_FRect origin;
                 origin.x = window_width/2-2;
@@ -474,6 +493,8 @@ int main(void) {
                         x1 = pA.x;
                         x2 = pB.x;
 
+                        // if (line.a.x < line.b.x) continue;
+
                         y11 = renderHeight/2 - (heightA/2) * (line.height / 32.0f) - playerZlook - (heightA/2) * (line.z / 32.0f);
                         y12 = renderHeight/2 + heightA/2 - playerZlook - (heightA/2) * (line.z / 32.0f);
 
@@ -493,7 +514,6 @@ int main(void) {
                             y12 = y22;
                             y22 = temp;
                         }
-
 
                         R_RenderWall(pixels, texpixels, pnum, texpnum, renderWidth, renderHeight, x1, x2, y11, y12, y21, y22, original, line);
                     }
@@ -526,7 +546,6 @@ int main(void) {
             SDL_RenderTexture(renderer, screen_texture, NULL, NULL);
         }
         SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
-        // SDL_RenderRect(renderer, &ptr);
         SDL_RenderPresent(renderer);
     }
 
