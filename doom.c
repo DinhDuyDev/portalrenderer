@@ -7,154 +7,72 @@
 #include <math.h>
 #include <string.h>
 #include "SDL3/SDL.h"
-#include "SDL3/SDL_video.h"
 #include "SDL3/SDL_main.h"
 
+#include "g_gameparameters.h"
+#include "m_util.h"
+#include "e_entity.h"
+#include "g_textures.h"
+#include "w_geometry.h"
 
-#define W_WIDTH 640
-#define W_HEIGHT 360
-#define RAYCAST_SIZE_SCALE 320
-#define TARGET_FPS 144
+#include "g_render.h"
+#include "p_playervariables.c"
 
-#define LEVEL_WIDTH 10
-#define LEVEL_HEIGHT 10
+#define MAXSECTORS 100
+#define MAXLINEDEF 50
+#define MAXVISSECTOR 5
 
-#define tilesize 32
-#define maxheight 10000
-#define NEAR 1
 
-#define TITLELENGTH 40
+linedef lines_arr[MAXLINEDEF];
+int lines_arr_ln = 0;
+int lines_arr_index = 0;
 
-typedef struct {
-    float x;
-    float y;
-} vec2d;
+sector visible_sectors[MAXVISSECTOR];
+int visible_sectors_ln = 0;
+int visible_sectors_index = 0;
 
-typedef struct {
-    vec2d a;
-    vec2d b;
-    int z;
-    int height;
-} linedef;
+wallsegment portals[MAXPORTALSINONESECTOR];
+int portals_ln = 0;
+int portals_index = 0;
 
-double lerp(double x, double target, double weight) {
-    return x + (target - x) * weight;
-}
+// a, b, z1, z2 isPortal, portalZ1, portalZ2
+sector sectorslist[MAXSECTORS] = {
+    {
+        .num_linedef = 6,
+        .num_wall = 5,
+        .lines = {
+            {{-32, -32}, {0, -64}, 32, 0, 0, 0, 0}, 
+            {{0, -64}, {48, -32}, 32, 0, 0, 0, 0}, 
+            {{48, -32}, {16, 32}, 32, 0, 0, 0, 0}, 
+            {{16, 32}, {-16, 48}, 32, 0, 1, 24, 8}, 
+            {{-16, 48}, {-48, 16}, 32, 0, 0, 0, 0}, 
+            {{-48, 16}, {-32, -32}, 32, 0, 0, 0, 0},
+        },
+        .neighboring_sectors = {1},
+        .corresponding_portal_id = {3},
+        .walls_id = {0, 1, 2, 4, 5},
+    },
 
-double deg2rad(double x) {
-    return x * (M_PI / 180);
-}
-
-bool rect_collide(SDL_FRect *a, SDL_FRect *b) {
-    if (a->x + a->w >= b->x && a->x <= b->x + b->w && a->y + a->h >= b->y && a->y <= b->y + b->h) {
-        return true;
+    {
+        .num_linedef = 4,
+        .num_wall = 3,
+        .lines = {
+            {{16, 32}, {-16, 48}, 32, 0, 1, 24, 8},
+            {{16, 32}, {32, 64}, 32, 0, 0, 0, 0},
+            {{0, 80}, {32, 64}, 32, 0, 0, 0, 0},
+            {{-16, 48}, {0, 80}, 32, 0, 0, 0, 0},
+        },
+        .neighboring_sectors = {0},
+        .corresponding_portal_id = {0},
+        .walls_id = {1, 2, 3},
     }
-    return false;
-}
-
-/* translates real world coordinates into screen coordinates */
-vec2d M_WorldToScreen(float vx, float vy, int w) { 
-    vec2d res;
-    double transformY = vx;
-    double transformX = w/2 * (1 + vy/(vx+0.1));
-    res.x = transformX;
-    res.y = transformY;
-    return res;
-}
-
-linedef maplines[] = {
-    {{-32, -32}, {0, -64}}, // AB
-    {{0, -64}, {48, -32}}, // BC
-    {{48, -32}, {16, 32}}, // CD
-    {{16, 32}, {-16, 48}}, // DE
-    {{-16, 48}, {-48, 16}}, // FE
-    {{-48, 16}, {-32, -32}}, // EA
-    {{0, 0}, {0, 32}, 0, -24},
-    {{0, 32}, {0, 64}, 0, 16},
-    // {{0, 64}, {0, 96}, 0, 24},
-    // {{0, 96}, {0, 128}, 0, 32},
 };
-int maplineN = 6;
 
-double normalize_direction(double x) {
-    bool norm = true;
-    while (norm) {
-        if (x < 0) x += 360;
-        else if (x >= 360) x -= 360;
-        if (x >= 0 || x < 360) {norm = false;}
-    }
-    return x;
-}
-
-float vlen_squared(vec2d v) {
-    return v.x * v.x + v.y * v.y;
-}
-
-/* compares two lines */
-int linecomp(const void *a, const void *b) {
-    // return ((linedef*) a)->a.y - ((linedef*)b)->a.y;
-    linedef* l_a = (linedef*) a;
-    linedef* l_b = (linedef*) b;
-    
-    int nearest_depth_a = (l_a->a.x + l_a->b.x) / 2; //(l_a->a.y < l_a->b.y) ? l_a->a.y : l_a->b.y;
-    int nearest_depth_b = (l_b->a.x + l_b->b.x) / 2; //(l_b->a.y < l_b->b.y) ? l_b->a.y : l_b->b.y;
-
-    return -(nearest_depth_a - nearest_depth_b);
-}
-
-/* always renders from right to left*/
-void R_RenderWall(u_int32_t *pixbuff, u_int32_t *texture, int pnum, int tnum, int w, int h, int x1, int x2, int y11, int y12, int y21, int y22, linedef original, linedef modified)
-{
-    /* 
-        If the height is out of the screen, then pray
-    */
-
-    int x_ptr = x1;
-    int width = x2 - x1;
-    double y0 = y11;
-    double y1 = y12;
-    int dy1 = y21 - y11;
-    int dy2 = y22 - y12;
-
-    /* length of obscured wall */
-    float scale_to_original = 1.0 - (fabs(original.a.x - original.b.x) - fabs(modified.a.x - modified.b.x)) / (original.a.x - original.b.x);
-
-    /* interpolation */
-    while (x_ptr < x2) {
-        /* if in bounds, then render */
-        if (x_ptr >= 0 && x_ptr < w) {
-            /* strips of wall */
-            float ratio = (float) (x_ptr - x1) / width;
-            y0 = y11 + ratio * dy1;
-            y1 = y12 + ratio * dy2;
-            u_int32_t col;
-            for (int i = y0; i <= y1; i ++) {
-                if (i >= 0 && i < h) {
-                    int tx = scale_to_original * 288 + ((float) (x2 - x_ptr) / width - scale_to_original) * 288;
-                    int ty = ((float) (i - y0) / (y1 - y0)) * 288;
-                    if (fabs(i-y0) < 3 || fabs(i-y1) < 3 || x_ptr == x1 || x_ptr == x2-1) col = 0xffff00ff;
-                    else col = 0x00000000;
-                    pixbuff[i * pnum + x_ptr] = col;
-                } else {
-                    if (i >= h) {
-                        break;
-                    }
-                    if (i < 0) i = 0;
-                }
-            }
-        } else {
-            if (x_ptr < 0) {
-                x_ptr = 0;
-            }
-        }
-        x_ptr ++;
-    }
-}
 
 int main(void) {
-
+    // sectorslist[1].lines[0] = sectorslist[0].lines[3];
     /* window */
-    char *windowtitle = (char*) malloc(sizeof(char) * TITLELENGTH);
+    char* windowtitle = (char*) malloc(sizeof(char) * TITLELENGTH);
     
     snprintf(windowtitle, TITLELENGTH, "FPS: %d", 0);
 
@@ -162,15 +80,8 @@ int main(void) {
     bool running = true;
 
     /* camera */
-    float playerX = -32;
-    float playerY = -32;
-    float playerZ = 64;
-    int playerWidth = 16;
-    float hsp = 0;
-    float vsp = 0;
-    float playerZlook = 0;
-    int maxZlookup = 255;
-    double direction = 0;
+    P_PlayerState playerstate = P_InitializePlayerState();
+    E_GameEntity playerentity = {.x = 0, .y = 0, .z = 0, .w = 16, .h = 16};
 
     int resolution = 320;
 
@@ -194,9 +105,7 @@ int main(void) {
     float window_width_ratio, window_height_ratio;
     SDL_Window *window;
     SDL_Renderer *renderer;
-    SDL_Texture *texture;
     SDL_Texture *screen_texture;
-    SDL_Surface *surface;
 
 
     /* screen buffer */
@@ -217,10 +126,6 @@ int main(void) {
         SDL_Log("SDL Init failed!");
         return SDL_APP_FAILURE;
     }
-
-    /* transform geometry */
-    linedef transformedlines[maplineN];
-    int transformedPtr = 0;
     
     window = SDL_CreateWindow("Raycaster Demo", W_WIDTH, W_HEIGHT, SDL_WINDOW_RESIZABLE);
     if (!window) {
@@ -238,49 +143,10 @@ int main(void) {
     SDL_SetRenderVSync(renderer, 1); /* turns on VSync and caps the framerate to the monitor's refresh rate (60fps) */
     SDL_SetWindowRelativeMouseMode(window, true);
 
-    SDL_SetDefaultTextureScaleMode(renderer, SDL_SCALEMODE_NEAREST);
-    surface = SDL_LoadSurface("images/marathon_brick_texture.png");
-
-    if (!surface) {
-        SDL_Log("Failed to create surface! Error: %s", SDL_GetError());
-        SDL_Quit();
-        return SDL_APP_FAILURE;
-    }
-
-    /* ensures the texture has the correct format */
-    SDL_Texture *temp_texture = SDL_CreateTextureFromSurface(renderer, surface);
-    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, temp_texture->w, temp_texture->h);
-    if (!texture) {
-        SDL_Log("Failed to create texture! Error: %s", SDL_GetError());
-        SDL_Quit();
-        return SDL_APP_FAILURE;
-    }
-
-    if (!SDL_LockTexture(texture, NULL, (void*) &texpixels, &texpitch)) {
-        SDL_Log("Failed to lock normal texture! Error %s", SDL_GetError());
-        SDL_Quit();
-        return SDL_APP_FAILURE;
-    } else {
-        texpnum = (int) texpitch / sizeof(u_int32_t);
-        printf("Size of texture buffer: %lu\n", sizeof(texpixels));
-        printf("Width of texture: %lu\n", surface->pitch / sizeof(u_int32_t));
-        printf("Width of target: %d\n", texpnum);
-        u_int32_t* pixarr = (u_int32_t*) surface->pixels;
-        for (int y = 0; y < 288; y ++) {
-            for (int x = 0; x < 288; x ++) {
-                texpixels[y * texpnum + x] = pixarr[y * (surface->pitch / sizeof(u_int32_t))+ x];
-            }
-        }
-    }
-
-
-    SDL_DestroySurface(surface);
-
     /* screen buffer */
     renderWidth = resolution;
     renderHeight = W_HEIGHT;
-
-    bool filled[renderWidth * renderHeight];
+    int zbuffer[renderWidth * renderHeight];
 
     screen_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, renderWidth, renderHeight);
     if (!screen_texture) {
@@ -303,17 +169,22 @@ int main(void) {
 
     /* running */
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    while (running) {
 
+    /*************
+     * GAME LOOP *
+     ************/
+
+    while (running) {
+        playerstate.sector_id = 0;
         lastTick = currentTick;
         currentTick = SDL_GetTicks();
         dt = (currentTick - lastTick) / 100.0f;
         cTick = SDL_GetTicks();
 
-        // SDL_GetWindowSizeInPixels(window, &window_width, &window_height);
+        SDL_GetWindowSizeInPixels(window, &window_width, &window_height);
 
-        // window_width_ratio = (float) window_width / W_WIDTH;
-        // window_height_ratio = (float) window_height / W_HEIGHT;
+        window_width_ratio = (float) window_width / W_WIDTH;
+        window_height_ratio = (float) window_height / W_HEIGHT;
 
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -330,59 +201,41 @@ int main(void) {
             } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
                 double mousexmove = -event.motion.xrel/10;
                 double mouseymove = event.motion.yrel;
-                direction = normalize_direction(direction - mousexmove);
-                playerZlook += mouseymove;
+                playerstate.direction = normalize_direction(playerstate.direction - mousexmove);
+                playerstate.zlook += mouseymove;
                 ptr.x = event.motion.x;
                 ptr.y = event.motion.y;
             }
         }
 
 
-        /* logic */
-        double c = cos(deg2rad(-direction));
-        double s = sin(deg2rad(-direction));
-        for (int i = 0; i < maplineN; i ++) {
-            linedef line = maplines[i];
-            line.a.x -= playerX;
-            line.a.y -= playerY;
-            line.b.x -= playerX;
-            line.b.y -= playerY;
-
-            /* coords a */
-            double ax = line.a.x;
-            line.a.x = c * line.a.x - s * line.a.y;
-            line.a.y = s * ax + c * line.a.y;
-
-            /* coords b */
-            double bx = line.b.x;
-            line.b.x = c * line.b.x - s * line.b.y;
-            line.b.y = s * bx + c * line.b.y;
-
-            transformedlines[i] = line;
-        }
+        /*********
+         * LOGIC *
+         *********/
 
         /* capping */
-        if (playerZlook > maxZlookup) {
-            playerZlook = maxZlookup;
+        if (playerstate.zlook > playerstate.max_zlook) {
+            playerstate.zlook = playerstate.max_zlook;
         } 
-        if (playerZlook < -maxZlookup) {
-            playerZlook = -maxZlookup;
+        if (playerstate.zlook < -playerstate.max_zlook) {
+            playerstate.zlook = -playerstate.max_zlook;
         }
 
         const bool *key_states = SDL_GetKeyboardState(NULL);
 
         int forward = (key_states[SDL_SCANCODE_W] - key_states[SDL_SCANCODE_S]);
         int sides   = (key_states[SDL_SCANCODE_A] - key_states[SDL_SCANCODE_D]);
-        hsp = lerp(hsp, forward * cos(deg2rad(direction)) - sides * cos(deg2rad(direction+90)), 0.3);
-        vsp = lerp(vsp, forward * sin(deg2rad(direction)) - sides * sin(deg2rad(direction+90)), 0.3);
+        playerentity.hsp = lerp(playerentity.hsp, forward * cos(deg2rad(playerstate.direction)) - sides * cos(deg2rad(playerstate.direction+90)), 0.3);
+        playerentity.vsp = lerp(playerentity.vsp, forward * sin(deg2rad(playerstate.direction)) - sides * sin(deg2rad(playerstate.direction+90)), 0.3);
 
         if (key_states[SDL_SCANCODE_E]) {
-            playerZlook = 0;
+            playerstate.zlook = 0;
         }
 
         /* collisions */
-        playerX += hsp;
-        playerY += vsp;
+        playerentity.x += playerentity.hsp;
+        playerentity.y += playerentity.vsp;
+        playerentity.z += (key_states[SDL_SCANCODE_SPACE] - key_states[SDL_SCANCODE_LSHIFT]);
 
         /* plane maths */
 
@@ -397,30 +250,59 @@ int main(void) {
             running = false;
         }
         
+        /* resetting the whole canvas */
         for (int i = 0; i < renderWidth * renderHeight; i ++) {
             pixels[i] = 0x0000;
-            filled[i] = false;
+        }
+        for (int i = 0; i < renderWidth * renderHeight; i ++) {
+            zbuffer[i] = 9999;
         }
 
-        double posX = playerX / tilesize;
-        double posY = playerY / tilesize;
+        /* resetting */
+        visible_sectors_index = 0;
+        visible_sectors_ln = 0;
 
-        int tex_width = texture->w;
-        int tex_height = texture->h;
+        lines_arr_index = 0;
+        lines_arr_ln = 0;
+
 
         /* drawing maplines */
-        qsort(transformedlines, maplineN, sizeof(linedef), linecomp);
-        for (int i = 0; i < maplineN; i ++) {
-            linedef line = transformedlines[i];
-            // if (line.a.x > line.b.x) continue;
-            if (map) {
+
+        double c = cos(deg2rad(-playerstate.direction));
+        double s = sin(deg2rad(-playerstate.direction));
+
+        sector current_sector = sectorslist[playerstate.sector_id];
+        visible_sectors[visible_sectors_ln++] = current_sector;
+
+        while (visible_sectors_index < visible_sectors_ln) {
+            for (int i = 0; i < visible_sectors[visible_sectors_index].num_wall; i ++) { /* drawing all the walls */
+                linedef line = visible_sectors[visible_sectors_index].lines[visible_sectors[visible_sectors_index].walls_id[i]];
+
+                line.a.x -= playerentity.x;
+                line.a.y -= playerentity.y;
+                line.b.x -= playerentity.x;
+                line.b.y -= playerentity.y;
+
+                /* coords a */
+                double ax = line.a.x;
+                line.a.x = c * line.a.x - s * line.a.y;
+                line.a.y = s * ax + c * line.a.y;
+
+                /* coords b */
+                double bx = line.b.x;
+                line.b.x = c * line.b.x - s * line.b.y;
+                line.b.y = s * bx + c * line.b.y;
+
+                if (map) {
                 SDL_FRect origin;
                 origin.x = window_width/2-2;
                 origin.y = window_height/2-2;
                 origin.w = 4;
                 origin.h = 4;
-                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+                SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
+                if (line.isPortal) SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
                 SDL_RenderLine(renderer, window_width/2 + line.a.y, window_height/2 - line.a.x, window_width/2 + line.b.y, window_height/2 - line.b.x);
+                if (line.isPortal) SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
                 SDL_RenderRect(renderer, &origin);
 
                 if (line.a.y > line.b.y) {
@@ -456,8 +338,9 @@ int main(void) {
                     SDL_RenderRect(renderer, &origin);
                     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
                 }
+                }
 
-            } else {
+                /* drawing the wall*/
                 if (line.a.x > NEAR || line.b.x > NEAR) {
 
                     linedef original = line;
@@ -493,13 +376,18 @@ int main(void) {
                         x1 = pA.x;
                         x2 = pB.x;
 
-                        // if (line.a.x < line.b.x) continue;
 
-                        y11 = renderHeight/2 - (heightA/2) * (line.height / 32.0f) - playerZlook - (heightA/2) * (line.z / 32.0f);
-                        y12 = renderHeight/2 + heightA/2 - playerZlook - (heightA/2) * (line.z / 32.0f);
+                        float bottomDeltaA = ((float) (playerentity.z - line.z2) / tilesize) * heightA;
+                        float bottomDeltaB = ((float) (playerentity.z - line.z2) / tilesize) * heightB;
 
-                        y21 = renderHeight/2 - (heightB/2) * (line.height / 32.0f) - playerZlook - (heightB/2) * (line.z / 32.0f);
-                        y22 = renderHeight/2 + heightB/2 - playerZlook - (heightB/2) * (line.z / 32.0f);
+                        float topDeltaA = ((float) (line.z1 - playerentity.z) / tilesize - 1.0) * heightA;
+                        float topDeltaB = ((float) (line.z1 - playerentity.z) / tilesize - 1.0) * heightB;
+                        
+                        y11 = renderHeight/2 - heightA/2 - playerstate.zlook - topDeltaA;
+                        y12 = renderHeight/2 + heightA/2 - playerstate.zlook + bottomDeltaA;
+
+                        y21 = renderHeight/2 - heightB/2 - playerstate.zlook - topDeltaB;
+                        y22 = renderHeight/2 + heightB/2 - playerstate.zlook + bottomDeltaB;
 
                         if (x1 > x2) {
                             double temp = x1;
@@ -515,12 +403,173 @@ int main(void) {
                             y22 = temp;
                         }
 
-                        R_RenderWall(pixels, texpixels, pnum, texpnum, renderWidth, renderHeight, x1, x2, y11, y12, y21, y22, original, line);
+                        R_RenderWall(pixels, zbuffer, pnum, renderWidth, renderHeight, x1, x2, y11, y12, y21, y22, line, 1, 1, 1, 1);
                     }
                 }
             }
-        }
 
+            for (int i = 0; i < visible_sectors[visible_sectors_index].num_linedef - visible_sectors[visible_sectors_index].num_wall; i ++) { /* drawing all the portals */
+                linedef line = visible_sectors[visible_sectors_index].lines[visible_sectors[visible_sectors_index].corresponding_portal_id[i]];
+
+                line.a.x -= playerentity.x;
+                line.a.y -= playerentity.y;
+                line.b.x -= playerentity.x;
+                line.b.y -= playerentity.y;
+
+                /* coords a */
+                double ax = line.a.x;
+                line.a.x = c * line.a.x - s * line.a.y;
+                line.a.y = s * ax + c * line.a.y;
+
+                /* coords b */
+                double bx = line.b.x;
+                line.b.x = c * line.b.x - s * line.b.y;
+                line.b.y = s * bx + c * line.b.y;
+
+                if (map) {
+                SDL_FRect origin;
+                origin.x = window_width/2-2;
+                origin.y = window_height/2-2;
+                origin.w = 4;
+                origin.h = 4;
+                SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
+                if (line.isPortal) SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+                SDL_RenderLine(renderer, window_width/2 + line.a.y, window_height/2 - line.a.x, window_width/2 + line.b.y, window_height/2 - line.b.x);
+                if (line.isPortal) SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
+                SDL_RenderRect(renderer, &origin);
+
+                if (line.a.y > line.b.y) {
+                    vec2d temp = line.a;
+                    line.a = line.b;
+                    line.b = temp;
+                }
+
+                if (line.a.x <= NEAR) {
+                    double gradient = (double) ((line.b.x - line.a.x) / (line.b.y - line.a.y));
+                    double x_onscreen = line.b.y - (double) ((line.b.x - NEAR) / gradient);
+                    line.a.y = x_onscreen;
+                    line.a.x = NEAR;
+
+                    origin.x = window_width/2 + line.a.y;
+                    origin.y = window_height/2;
+                    
+                    SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+                    SDL_RenderRect(renderer, &origin);
+                    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+                }
+
+                if (line.b.x <= NEAR) {
+                    double gradient = (double) ((line.a.x - line.b.x) / (line.a.y - line.b.y));
+                    double x_onscreen = line.a.y - (double) ((line.a.x - NEAR) / gradient);
+                    line.b.y = x_onscreen;
+                    line.b.x = NEAR;
+
+                    origin.x = window_width/2 + line.b.y;
+                    origin.y = window_height/2;
+
+                    SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+                    SDL_RenderRect(renderer, &origin);
+                    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+                }
+                }
+
+                /* drawing the wall*/
+                if (line.a.x > NEAR || line.b.x > NEAR) {
+
+                    linedef original = line;
+
+                    if (line.a.x <= NEAR) {
+                        double gradient = (double) (line.b.x - line.a.x) / (line.b.y - line.a.y);
+                        double x_onscreen = line.b.y - (double) ((line.b.x - NEAR) / gradient);
+                        line.a.y = x_onscreen;
+                        line.a.x = NEAR;
+                    }
+
+                    if (line.b.x <= NEAR) {
+                        double gradient = (double) (line.a.x - line.b.x) / (line.a.y - line.b.y);
+                        double x_onscreen = line.a.y - (double) ((line.a.x - NEAR) / gradient);
+                        line.b.y = x_onscreen;
+                        line.b.x = NEAR;
+                    }
+
+                    vec2d pA = M_WorldToScreen(line.a.x, line.a.y, renderWidth);
+                    vec2d pB = M_WorldToScreen(line.b.x, line.b.y, renderWidth);
+
+                    if (pA.x > pB.x) {
+                        vec2d temp = pA;
+                        pA = pB;
+                        pB = temp;
+                    }
+                    
+                    if (pA.x > 0 || pB.x > 0 || pA.x < renderWidth || pB.x < 0) {
+                        double heightA = renderHeight / (pA.y / 25 + 0.01);
+                        double heightB = renderHeight / (pB.y / 25 + 0.01);
+                        
+                        double x1, x2, y11, y12, y21, y22, yportal11, yportal12, yportal21, yportal22;
+                        x1 = pA.x;
+                        x2 = pB.x;
+
+
+                        float bottomDeltaA = ((float) (playerentity.z - line.z2) / tilesize) * heightA;
+                        float bottomDeltaB = ((float) (playerentity.z - line.z2) / tilesize) * heightB;
+
+                        float topDeltaA = ((float) (line.z1 - playerentity.z) / tilesize - 1.0) * heightA;
+                        float topDeltaB = ((float) (line.z1 - playerentity.z) / tilesize - 1.0) * heightB;
+
+                        float topPortalA = ((float) (line.portalZ1 - playerentity.z) / tilesize - 1.0) * heightA;
+                        float topPortalB = ((float) (line.portalZ1 - playerentity.z) / tilesize - 1.0) * heightB;
+
+                        float bottomPortalA = ((float) (playerentity.z - line.portalZ2) / tilesize) * heightA;
+                        float bottomPortalB = ((float) (playerentity.z - line.portalZ2) / tilesize) * heightB;
+
+
+                        y11 = renderHeight/2 - heightA/2 - playerstate.zlook - topDeltaA;
+                        y12 = renderHeight/2 + heightA/2 - playerstate.zlook + bottomDeltaA;
+
+                        yportal11 = renderHeight/2 - heightA/2 - playerstate.zlook - topPortalA;
+                        yportal12 = renderHeight/2 + heightA/2 - playerstate.zlook + bottomPortalA;
+
+                        yportal21 = renderHeight/2 - heightB/2 - playerstate.zlook - topPortalB;
+                        yportal22 = renderHeight/2 + heightB/2 - playerstate.zlook + bottomPortalB;
+
+                        y21 = renderHeight/2 - heightB/2 - playerstate.zlook - topDeltaB;
+                        y22 = renderHeight/2 + heightB/2 - playerstate.zlook + bottomDeltaB;
+
+                        if (x1 > x2) {
+                            double temp = x1;
+                            x1 = x2;
+                            x2 = temp;
+
+                            temp = y11;
+                            y11 = y21;
+                            y21 = temp;
+
+                            temp = y12;
+                            y12 = y22;
+                            y22 = temp;
+                        }
+
+                        R_RenderWall(pixels, zbuffer, pnum, renderWidth, renderHeight, x1, x2, y11, yportal11, y21, yportal21, line, 1, 1, 1, 1);
+                        R_RenderWall(pixels, zbuffer, pnum, renderWidth, renderHeight, x1, x2, yportal12, y12, yportal22, y22, line, 1, 1, 1, 1);
+                        portals[portals_ln++] = (wallsegment) {.portal_id = visible_sectors[visible_sectors_index].neighboring_sectors[i], .x1 = x1, .x2 = x2, .y11 = yportal11, .y12 = yportal12, .y21 = yportal21, .y22 = yportal22};
+                    }
+                }
+            }
+
+            /* load in more sectors */
+            for (int p = 0; p < portals_ln; p ++) {
+                if (R_WallSegmentVisible(zbuffer, pnum, renderWidth, renderHeight, portals[p])) {
+                    printf("CONNECTED ID: %d. VISIBLE SECTORS: %d\n", portals[p].portal_id, visible_sectors_ln);
+                    if (visible_sectors_ln < MAXVISSECTOR)
+                        visible_sectors[visible_sectors_ln ++] = sectorslist[portals[p].portal_id];
+
+                }
+            }
+            portals_ln = 0;
+            portals_index = 0;
+            visible_sectors_index ++;
+        }
+ 
         if (map) {
             SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
             SDL_RenderLine(renderer, 0, window_height/2, window_width, window_height/2);
@@ -531,7 +580,7 @@ int main(void) {
         uint64_t elapsedTick = SDL_GetTicks() - cTick;
         if (cTick > lTick + 1000) {
             lTick = cTick;
-            snprintf(windowtitle, TITLELENGTH, "Raycaster FPS: %d, x: %d, y: %d", frames, (int) playerX, (int) playerY);
+            snprintf(windowtitle, TITLELENGTH, "Raycaster FPS: %d, x: %d, y: %d", frames, (int) playerentity.x, (int) playerentity.y);
             SDL_SetWindowTitle(window, windowtitle);
             frames = 0;
         }
@@ -556,9 +605,6 @@ int main(void) {
     free(windowtitle);
     SDL_DestroyWindow(window);
     SDL_DestroyRenderer(renderer);
-    SDL_UnlockTexture(texture);
-    SDL_DestroyTexture(texture);
-    SDL_DestroyTexture(temp_texture);
     SDL_UnlockTexture(screen_texture);
     SDL_DestroyTexture(screen_texture);
     SDL_Quit();
