@@ -1,7 +1,9 @@
 /// @brief Entity definition
-#include "e_entitydefs.h"
 
-/* All data pertaining to an entity */
+#ifndef E_ENTITY_H
+#define E_ENTITY_H
+
+#include "e_entitydefs.h"
 
 static int id = 0;
 typedef struct
@@ -30,3 +32,5 @@ E_GameEntity E_InitializeGameEntity(float x, float y, float z, int w, int h, E_E
     ent.tag = tag;
     return ent;
 }
+
+#endif

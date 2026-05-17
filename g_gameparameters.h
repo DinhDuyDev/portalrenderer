@@ -1,6 +1,7 @@
-//
-//  ALL GAME PARAMETERS.
-//
+/// @brief: ALL GAME PARAMETERS.
+
+#ifndef G_GAMEPARAMETERS_H
+#define G_GAMEPARAMETERS_H
 
 #define W_WIDTH 640
 #define W_HEIGHT 360
@@ -16,3 +17,5 @@
 #define NEAR 3
 
 #define TITLELENGTH 40
+
+#endif

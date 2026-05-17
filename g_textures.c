@@ -1,12 +1,11 @@
+/// Texture functions headers
+
+
 #include "SDL3/SDL.h"
 #include "SDL3/SDL_video.h"
 #include "SDL3/SDL_main.h"
 #include <stdlib.h>
 #include "g_textures.h"
-
-//
-//  TEXTURE FUNCTIONS DEFINITIONS
-//
 
 
 /* Returns pnum (pitch / bytes to store color) of texture. Takes a pointer to fill out the pixels data. */
@@ -23,7 +22,7 @@ int G_LoadTextureIntoBitmapForm(char* filename, u_int32_t** pixels)
     if (!(*pixels)) {
         fprintf(stderr, "Error! Malloc for texture %s failed.\n", filename);
     } else {
-        fprintf(stdout, "Texture allocation for %s successful! %d bits bytes assigned for texture.\n", filename, temporary_surface->w * temporary_surface->h);
+        fprintf(stdout, "Texture allocation: %s \n\tStatus: successful! %lu bytes assigned for texture.\n", filename, temporary_surface->w * temporary_surface->h * sizeof(**pixels));
     }
 
     u_int32_t* pixarr = (u_int32_t*) temporary_surface->pixels;
@@ -34,7 +33,7 @@ int G_LoadTextureIntoBitmapForm(char* filename, u_int32_t** pixels)
         }
     }
 
-    printf("Dimensions: %d, %d, pitch: %lu\n", temporary_surface->w, temporary_surface->h, p * sizeof(u_int32_t));
+    printf("\tDimensions: %d, %d, pitch: %lu\n", temporary_surface->w, temporary_surface->h, p * sizeof(u_int32_t));
     SDL_DestroySurface(temporary_surface);
     return p * sizeof(u_int32_t);
 
@@ -52,7 +51,7 @@ void G_PrintBitmapData(u_int32_t** pixels, int w, int h)
     }
 }
 
-/* Make a 32-bit integer from r, g, b, a to transcribe into RGBA */
+/* Make a 32-bit integer from r, g, b, a to transcribe into RGBA. */
 u_int32_t G_MakeARGB32BitFormat(u_int32_t r, u_int32_t g, u_int32_t b, u_int32_t a) 
 {
     u_int32_t red   = r << 16;
@@ -64,28 +63,8 @@ u_int32_t G_MakeARGB32BitFormat(u_int32_t r, u_int32_t g, u_int32_t b, u_int32_t
 
 /* Get RGBA components from 32-bit integer and put them in r, g, b, a pointers. */
 void G_GetARGBColor(u_int32_t col, u_int32_t* r, u_int32_t* g, u_int32_t* b, u_int32_t* a) {
-    // *r = col >> 24;
-    // *g = (col << 8) >> 24;
-    // *b = (col << 16) >> 24;
-    // *a = (col << 24) >> 24;
     *a = col >> 24;
     *r = (col << 8) >> 24;
     *g = (col << 16) >> 24;
     *b = (col << 24) >> 24;
 }
-
-
-// 00000000000000000000000000000000
-// 10000000
-
-// int main(void) 
-// {
-//     u_int32_t color = 0xffaaffff;
-//     u_int32_t r, g, b, a;
-//     G_GetARGBColor(color, &r, &g, &b, &a);
-//     printf("%u %u %u %u\n", a - 10, r - 10, g - 10, b - 10);
-//     u_int32_t colshade = G_MakeARGB32BitFormat(r - 10, g - 10, b - 10, a - 10);
-//     G_GetARGBColor(colshade, &r, &g, &b, &a);
-//     printf("%u %u %u %u\n", a, r, g, b);
-//     return 0;
-// }
