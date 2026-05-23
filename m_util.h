@@ -6,7 +6,7 @@
 #define M_UTIL_H
 
 #include <math.h>
-#include "w_geometry.h"
+#include "sectors.h"
 
 /* gradually moves x to target through a weight */
 double lerp(double x, double target, double weight);
