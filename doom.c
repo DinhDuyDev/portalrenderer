@@ -13,64 +13,158 @@
 #include "m_util.h"
 #include "e_entity.h"
 #include "g_textures.h"
-#include "w_geometry.h"
+#include "sectors.h"
 
 #include "g_render.h"
 #include "p_playervariables.c"
 
 #define MAXSECTORS 100
-#define MAXLINEDEF 50
-#define MAXVISSECTOR 5
+#define MAXLINEDEF 100
+#define MAXVISSECTOR 10
 
-
-linedef lines_arr[MAXLINEDEF];
-int lines_arr_ln = 0;
-int lines_arr_index = 0;
-
-sector visible_sectors[MAXVISSECTOR];
+int visible_sectors[MAXVISSECTOR];
 int visible_sectors_ln = 0;
 int visible_sectors_index = 0;
 
 wallsegment portals[MAXPORTALSINONESECTOR];
 int portals_ln = 0;
-int portals_index = 0;
+
+u_int8_t portaltable[1024];
+
+size_t hash(linedef line) {
+    size_t hash = 0;
+    hash += line.a.x * 31 * 31 * 31;
+    hash += line.a.y * 31 * 31;
+    hash += line.b.x * 31;
+    hash += line.b.y;
+    return hash;
+}
 
 // a, b, z1, z2 isPortal, portalZ1, portalZ2
 sector sectorslist[MAXSECTORS] = {
+
     {
         .num_linedef = 6,
         .num_wall = 5,
         .lines = {
-            {{-32, -32}, {0, -64}, 32, 0, 0, 0, 0}, 
-            {{0, -64}, {48, -32}, 32, 0, 0, 0, 0}, 
-            {{48, -32}, {16, 32}, 32, 0, 0, 0, 0}, 
-            {{16, 32}, {-16, 48}, 32, 0, 1, 24, 8}, 
-            {{-16, 48}, {-48, 16}, 32, 0, 0, 0, 0}, 
-            {{-48, 16}, {-32, -32}, 32, 0, 0, 0, 0},
+            {{0, 0}, {128, 0}, 32, 0, 0, 0, 0},
+            {{0, 0}, {0, 64}, 32, 0, 0, 0, 0},
+            {{0, 64}, {128, 64}, 32, 0, 0, 0, 0},
+            {{128, 0}, {128, 16}, 32, 0, 0, 0, 0},
+            {{128, 56}, {128, 64}, 32, 0, 0, 0, 0},
+            {{128, 16}, {128, 56}, 32, 0, 1, 28, 4},
         },
-        .neighboring_sectors = {1},
-        .corresponding_portal_id = {3},
-        .walls_id = {0, 1, 2, 4, 5},
+        .neighboring_sectors = {1, },
+        .portal_inds = {5, },
+        .wall_inds = {0, 1, 2, 3, 4, },
+    },
+
+    {
+        .num_linedef = 8,
+        .num_wall = 5,
+        .lines = {
+            {{128, 16}, {160, 16}, 32, 0, 0, 0, 0},
+            {{128, 16}, {128, 56}, 32, 0, 1, 28, 4},
+
+            {{128, 56}, {136, 56}, 32, 0, 0, 0, 0}, /* new wall */
+            {{136, 56}, {152, 56}, 32, 0, 1, 28, 4}, /* new wall */
+            {{152, 56}, {160, 56}, 32, 0, 0, 0, 0}, /* new wall */
+
+            {{160, 16}, {160, 32}, 32, 0, 0, 0, 0},
+            {{160, 48}, {160, 56}, 32, 0, 0, 0, 0},
+            {{160, 32}, {160, 48}, 32, 0, 1, 28, 4},
+        },
+        .neighboring_sectors = {0, 3, 2},
+        .portal_inds = {1, 3, 7},
+        .wall_inds = {0, 2, 4, 5, 6},
     },
 
     {
         .num_linedef = 4,
         .num_wall = 3,
         .lines = {
-            {{16, 32}, {-16, 48}, 32, 0, 1, 24, 8},
-            {{16, 32}, {32, 64}, 32, 0, 0, 0, 0},
-            {{0, 80}, {32, 64}, 32, 0, 0, 0, 0},
-            {{-16, 48}, {0, 80}, 32, 0, 0, 0, 0},
+            {{160, 32}, {192, 32}, 32, 0, 0, 0, 0},
+            {{160, 32}, {160, 48}, 32, 1, 0, 28, 4},
+            {{160, 48}, {192, 48}, 32, 0, 0, 0, 0},
+            {{192, 32}, {192, 48}, 32, 0, 0, 0, 0},
         },
-        .neighboring_sectors = {0},
-        .corresponding_portal_id = {0},
-        .walls_id = {1, 2, 3},
-    }
+        .neighboring_sectors = {1, },
+        .portal_inds = {1, },
+        .wall_inds = {0, 2, 3},
+    },
+
+    {
+        .num_linedef = 4,
+        .num_wall = 2,
+        .lines = {
+            {{136, 56}, {136, 72}, 32, 0, 0, 0, 0},
+            {{152, 56}, {152, 72}, 32, 0, 0, 0, 0},
+            {{136, 56}, {152, 56}, 32, 0, 1, 28, 4},
+            {{136, 72}, {152, 72}, 32, 0, 1, 28, 4},
+        },
+        .neighboring_sectors = {1, 4},
+        .portal_inds = {2, 3},
+        .wall_inds = {0, 1},
+    },
+
+    {
+        .num_linedef = 6,
+        .num_wall = 5,
+        .lines = {
+            {{96, 72}, {136, 72}, 32, 0, 0, 0, 0},
+            {{136, 72}, {152, 72}, 32, 0, 1, 28, 4},
+            {{152, 72}, {172, 72}, 32, 0, 0, 0, 0},
+            {{96, 72}, {96, 112}, 32, 0, 0, 0, 0},
+            {{172, 72}, {172, 112}, 32, 0, 0, 0, 0},
+            {{96, 112}, {172, 112}, 32, 0, 0, 0, 0},
+        },
+        .neighboring_sectors = {3, },
+        .portal_inds = {1, },
+        .wall_inds = {0, 2, 3, 4, 5, },
+    },
+    
+
+    /* sectors will now be portals */
+    /* if sectors are "full sectors" -> then everything is normal */
+    /* sectors must be defined in a clockwise order */
+
+
+    /* ORIGINAL MAP */
+
+    // {
+    //     .num_linedef = 6,
+    //     .num_wall = 5,
+    //     .lines = {
+    //         {{-32, -32}, {0, -64}, 32, 0, 0, 0, 0}, 
+    //         {{0, -64}, {48, -32}, 32, 0, 0, 0, 0}, 
+    //         {{48, -32}, {16, 32}, 32, 0, 0, 0, 0}, 
+    //         {{16, 32}, {-16, 48}, 32, 0, 1, 24, 8}, 
+    //         {{-16, 48}, {-48, 16}, 32, 0, 0, 0, 0}, 
+    //         {{-48, 16}, {-32, -32}, 32, 0, 0, 0, 0},
+    //     },
+    //     .neighboring_sectors = {1},
+    //     .portal_inds = {3},
+    //     .wall_inds = {0, 1, 2, 4, 5},
+    // },
+
+    // {
+    //     .num_linedef = 4,
+    //     .num_wall = 3,
+    //     .lines = {
+    //         {{16, 32}, {-16, 48}, 32, 0, 1, 24, 8},
+    //         {{16, 32}, {32, 64}, 32, 0, 0, 0, 0},
+    //         {{0, 80}, {32, 64}, 32, 0, 0, 0, 0},
+    //         {{-16, 48}, {0, 80}, 32, 0, 0, 0, 0},
+    //     },
+    //     .neighboring_sectors = {0},
+    //     .portal_inds = {0},
+    //     .wall_inds = {1, 2, 3},
+    // }
 };
 
+int portalsize = 0;
 
 int main(void) {
-    // sectorslist[1].lines[0] = sectorslist[0].lines[3];
     /* window */
     char* windowtitle = (char*) malloc(sizeof(char) * TITLELENGTH);
     
@@ -146,7 +240,7 @@ int main(void) {
     /* screen buffer */
     renderWidth = resolution;
     renderHeight = W_HEIGHT;
-    int zbuffer[renderWidth * renderHeight];
+    u_int8_t filled[renderWidth * renderHeight];
 
     screen_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, renderWidth, renderHeight);
     if (!screen_texture) {
@@ -175,7 +269,7 @@ int main(void) {
      ************/
 
     while (running) {
-        playerstate.sector_id = 0;
+
         lastTick = currentTick;
         currentTick = SDL_GetTicks();
         dt = (currentTick - lastTick) / 100.0f;
@@ -197,6 +291,12 @@ int main(void) {
                     SDL_SetWindowRelativeMouseMode(window, !SDL_GetWindowRelativeMouseMode(window));
                 } else if (event.key.key == SDLK_M) {
                     map = !map;
+                } else if (event.key.key == SDLK_U) {
+                    playerstate.sector_id ++;
+                    if (playerstate.sector_id > 4) {
+                        playerstate.sector_id = 0;
+                    }
+                    printf("%d\n", playerstate.sector_id);
                 }
             } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
                 double mousexmove = -event.motion.xrel/10;
@@ -239,7 +339,9 @@ int main(void) {
 
         /* plane maths */
 
-        /* rendering */
+        /**********
+         RENDERING  
+         **********/
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
@@ -253,17 +355,18 @@ int main(void) {
         /* resetting the whole canvas */
         for (int i = 0; i < renderWidth * renderHeight; i ++) {
             pixels[i] = 0x0000;
+            filled[i] = 0;
+            // portalfill[i] = 0;
         }
-        for (int i = 0; i < renderWidth * renderHeight; i ++) {
-            zbuffer[i] = 9999;
+
+        /* resetting the portals */
+        for (int i = 0; i < 1024; i ++) {
+            portaltable[i] = 0;
         }
 
         /* resetting */
         visible_sectors_index = 0;
         visible_sectors_ln = 0;
-
-        lines_arr_index = 0;
-        lines_arr_ln = 0;
 
 
         /* drawing maplines */
@@ -271,12 +374,14 @@ int main(void) {
         double c = cos(deg2rad(-playerstate.direction));
         double s = sin(deg2rad(-playerstate.direction));
 
-        sector current_sector = sectorslist[playerstate.sector_id];
-        visible_sectors[visible_sectors_ln++] = current_sector;
+        visible_sectors[visible_sectors_ln++] = playerstate.sector_id;
+        int sector_id = visible_sectors[visible_sectors_index];
 
         while (visible_sectors_index < visible_sectors_ln) {
-            for (int i = 0; i < visible_sectors[visible_sectors_index].num_wall; i ++) { /* drawing all the walls */
-                linedef line = visible_sectors[visible_sectors_index].lines[visible_sectors[visible_sectors_index].walls_id[i]];
+            sector_id = visible_sectors[visible_sectors_index];
+            /* drawing all the walls */
+            for (int i = 0; i < sectorslist[sector_id].num_wall; i ++) {
+                linedef line = sectorslist[sector_id].lines[sectorslist[sector_id].wall_inds[i]];
 
                 line.a.x -= playerentity.x;
                 line.a.y -= playerentity.y;
@@ -403,13 +508,14 @@ int main(void) {
                             y22 = temp;
                         }
 
-                        R_RenderWall(pixels, zbuffer, pnum, renderWidth, renderHeight, x1, x2, y11, y12, y21, y22, line, 1, 1, 1, 1);
+                        R_RenderWall(pixels, filled, pnum, renderWidth, renderHeight, x1, x2, y11, y12, y21, y22, 1, 1, 1, 1, line);
                     }
                 }
             }
 
-            for (int i = 0; i < visible_sectors[visible_sectors_index].num_linedef - visible_sectors[visible_sectors_index].num_wall; i ++) { /* drawing all the portals */
-                linedef line = visible_sectors[visible_sectors_index].lines[visible_sectors[visible_sectors_index].corresponding_portal_id[i]];
+            /* drawing all the portals */
+            for (int i = 0; i < sectorslist[sector_id].num_linedef - sectorslist[sector_id].num_wall; i ++) { 
+                linedef line = sectorslist[sector_id].lines[sectorslist[sector_id].portal_inds[i]];
 
                 line.a.x -= playerentity.x;
                 line.a.y -= playerentity.y;
@@ -435,7 +541,7 @@ int main(void) {
                 SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
                 if (line.isPortal) SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
                 SDL_RenderLine(renderer, window_width/2 + line.a.y, window_height/2 - line.a.x, window_width/2 + line.b.y, window_height/2 - line.b.x);
-                if (line.isPortal) SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
+                if (line.isPortal) SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
                 SDL_RenderRect(renderer, &origin);
 
                 if (line.a.y > line.b.y) {
@@ -499,7 +605,7 @@ int main(void) {
                         vec2d temp = pA;
                         pA = pB;
                         pB = temp;
-                    }
+                    } 
                     
                     if (pA.x > 0 || pB.x > 0 || pA.x < renderWidth || pB.x < 0) {
                         double heightA = renderHeight / (pA.y / 25 + 0.01);
@@ -508,7 +614,6 @@ int main(void) {
                         double x1, x2, y11, y12, y21, y22, yportal11, yportal12, yportal21, yportal22;
                         x1 = pA.x;
                         x2 = pB.x;
-
 
                         float bottomDeltaA = ((float) (playerentity.z - line.z2) / tilesize) * heightA;
                         float bottomDeltaB = ((float) (playerentity.z - line.z2) / tilesize) * heightB;
@@ -549,32 +654,35 @@ int main(void) {
                             y22 = temp;
                         }
 
-                        R_RenderWall(pixels, zbuffer, pnum, renderWidth, renderHeight, x1, x2, y11, yportal11, y21, yportal21, line, 1, 1, 1, 1);
-                        R_RenderWall(pixels, zbuffer, pnum, renderWidth, renderHeight, x1, x2, yportal12, y12, yportal22, y22, line, 1, 1, 1, 1);
-                        portals[portals_ln++] = (wallsegment) {.portal_id = visible_sectors[visible_sectors_index].neighboring_sectors[i], .x1 = x1, .x2 = x2, .y11 = yportal11, .y12 = yportal12, .y21 = yportal21, .y22 = yportal22};
+                        R_RenderWall(pixels, filled, pnum, renderWidth, renderHeight, x1, x2, y11, yportal11, y21, yportal21, 1, 1, 1, 1, line);
+                        R_RenderWall(pixels, filled, pnum, renderWidth, renderHeight, x1, x2, yportal12, y12, yportal22, y22, 1, 1, 1, 1, line);
+
+                        size_t ind = hash(line) % 1024;
+                        if (!portaltable[ind]) {
+                            portals[portals_ln ++] = (wallsegment) {.portal_id = sectorslist[sector_id].neighboring_sectors[i], .x1 = x1, .x2 = x2, .y11 = yportal11, y12 = yportal12, y21 = yportal21, y22 = yportal22};
+                            portaltable[ind] = 1;
+                        }
                     }
                 }
             }
-
             /* load in more sectors */
             for (int p = 0; p < portals_ln; p ++) {
-                if (R_WallSegmentVisible(zbuffer, pnum, renderWidth, renderHeight, portals[p])) {
-                    printf("CONNECTED ID: %d. VISIBLE SECTORS: %d\n", portals[p].portal_id, visible_sectors_ln);
-                    if (visible_sectors_ln < MAXVISSECTOR)
-                        visible_sectors[visible_sectors_ln ++] = sectorslist[portals[p].portal_id];
-
+                if (R_PortalVisible(filled, pnum, renderWidth, renderHeight, portals[p])) {
+                    visible_sectors[visible_sectors_ln ++] = portals[p].portal_id;
                 }
             }
             portals_ln = 0;
-            portals_index = 0;
             visible_sectors_index ++;
         }
- 
+
+        // for (int i = 0; i < renderWidth * renderHeight; i ++) {
+        //     if (filled[i]) pixels[i] = 0xff00ffff;
+        // }
+
         if (map) {
             SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
             SDL_RenderLine(renderer, 0, window_height/2, window_width, window_height/2);
         }
-
 
         frames ++;
         uint64_t elapsedTick = SDL_GetTicks() - cTick;
@@ -608,5 +716,5 @@ int main(void) {
     SDL_UnlockTexture(screen_texture);
     SDL_DestroyTexture(screen_texture);
     SDL_Quit();
-
+    return EXIT_SUCCESS;
 }
