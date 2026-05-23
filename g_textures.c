@@ -51,7 +51,7 @@ void G_PrintBitmapData(u_int32_t** pixels, int w, int h)
     }
 }
 
-/* Make a 32-bit integer from r, g, b, a to transcribe into RGBA. */
+/* Make a 32-bit integer from r, g, b, a to transcribe into ARGB. */
 u_int32_t G_MakeARGB32BitFormat(u_int32_t r, u_int32_t g, u_int32_t b, u_int32_t a) 
 {
     u_int32_t red   = r << 16;
