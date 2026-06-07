@@ -4,3 +4,7 @@
 3. "m_" : files related to maths.
 4. "p_" : files related to player control.
 5. "w_ : files related to world and geometry.
+
+
+### ALGORITHM
+1. Collisions will depend on grids.

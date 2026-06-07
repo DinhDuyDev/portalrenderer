@@ -4,6 +4,7 @@
 #define E_ENTITY_H
 
 #include "e_entitydefs.h"
+#include "sectors.h"
 
 static int id = 0;
 typedef struct
@@ -17,6 +18,8 @@ typedef struct
     int w;              /* width            */
     int h;              /* height           */
     E_EntityTag tag;    /* special tag      */
+
+    double dist_to_walls[MAXSECTORLINEDEF]; /* all distances to walls */
 
 } E_GameEntity;
 

@@ -40,7 +40,17 @@ size_t hash(linedef line) {
     return hash;
 }
 
+size_t hash2(linedef line) {
+    size_t hash = 0;
+    hash += line.a.x * 17 * 17 * 17;
+    hash += line.a.y * 17 * 17;
+    hash += line.b.x * 17;
+    hash += line.b.y;
+    return hash;
+}
+
 // a, b, z1, z2 isPortal, portalZ1, portalZ2
+
 sector sectorslist[MAXSECTORS] = {
 
     {
@@ -52,11 +62,14 @@ sector sectorslist[MAXSECTORS] = {
             {{0, 64}, {128, 64}, 32, 0, 0, 0, 0},
             {{128, 0}, {128, 16}, 32, 0, 0, 0, 0},
             {{128, 56}, {128, 64}, 32, 0, 0, 0, 0},
-            {{128, 16}, {128, 56}, 32, 0, 1, 28, 4},
+
+            {{128, 16}, {128, 56}, 32, 0, 1, 28, 8}, // portal: {0 - 1}
         },
         .neighboring_sectors = {1, },
         .portal_inds = {5, },
         .wall_inds = {0, 1, 2, 3, 4, },
+        .z1 = 0,
+        .z2 = 32,
     },
 
     {
@@ -64,19 +77,21 @@ sector sectorslist[MAXSECTORS] = {
         .num_wall = 5,
         .lines = {
             {{128, 16}, {160, 16}, 32, 0, 0, 0, 0},
-            {{128, 16}, {128, 56}, 32, 0, 1, 28, 4},
+            {{128, 16}, {128, 56}, 32, 0, 1, 28, 8}, // portal: {0 - 1}
 
-            {{128, 56}, {136, 56}, 32, 0, 0, 0, 0}, /* new wall */
-            {{136, 56}, {152, 56}, 32, 0, 1, 28, 4}, /* new wall */
-            {{152, 56}, {160, 56}, 32, 0, 0, 0, 0}, /* new wall */
+            {{128, 56}, {136, 56}, 32, 0, 0, 0, 0}, 
+            {{136, 56}, {152, 56}, 32, 0, 1, 28, 8}, // portal: {1 - 3}
+            {{152, 56}, {160, 56}, 32, 0, 0, 0, 0},
 
             {{160, 16}, {160, 32}, 32, 0, 0, 0, 0},
             {{160, 48}, {160, 56}, 32, 0, 0, 0, 0},
-            {{160, 32}, {160, 48}, 32, 0, 1, 28, 4},
+            {{160, 32}, {160, 48}, 32, 0, 1, 28, 8}, // portal: {1 - 2}
         },
         .neighboring_sectors = {0, 3, 2},
         .portal_inds = {1, 3, 7},
         .wall_inds = {0, 2, 4, 5, 6},
+        .z1 = 8,
+        .z2 = 32,
     },
 
     {
@@ -84,13 +99,15 @@ sector sectorslist[MAXSECTORS] = {
         .num_wall = 3,
         .lines = {
             {{160, 32}, {192, 32}, 32, 0, 0, 0, 0},
-            {{160, 32}, {160, 48}, 32, 1, 0, 28, 4},
+            {{160, 32}, {160, 48}, 32, 1, 0, 28, 8}, // portal: {1 - 2}
             {{160, 48}, {192, 48}, 32, 0, 0, 0, 0},
             {{192, 32}, {192, 48}, 32, 0, 0, 0, 0},
         },
         .neighboring_sectors = {1, },
         .portal_inds = {1, },
         .wall_inds = {0, 2, 3},
+        .z1 = 0,
+        .z2 = 32,
     },
 
     {
@@ -99,12 +116,14 @@ sector sectorslist[MAXSECTORS] = {
         .lines = {
             {{136, 56}, {136, 72}, 32, 0, 0, 0, 0},
             {{152, 56}, {152, 72}, 32, 0, 0, 0, 0},
-            {{136, 56}, {152, 56}, 32, 0, 1, 28, 4},
-            {{136, 72}, {152, 72}, 32, 0, 1, 28, 4},
+            {{136, 56}, {152, 56}, 32, 0, 1, 28, 8}, // portal: {1 - 3}
+            {{136, 72}, {152, 72}, 32, 0, 1, 28, 6}, // portal: {3 - 4}
         },
         .neighboring_sectors = {1, 4},
         .portal_inds = {2, 3},
         .wall_inds = {0, 1},
+        .z1 = 6,
+        .z2 = 32,
     },
 
     {
@@ -112,7 +131,7 @@ sector sectorslist[MAXSECTORS] = {
         .num_wall = 5,
         .lines = {
             {{96, 72}, {136, 72}, 32, 0, 0, 0, 0},
-            {{136, 72}, {152, 72}, 32, 0, 1, 28, 4},
+            {{136, 72}, {152, 72}, 32, 0, 1, 28, 6}, // portal: {1 - 3}
             {{152, 72}, {172, 72}, 32, 0, 0, 0, 0},
             {{96, 72}, {96, 112}, 32, 0, 0, 0, 0},
             {{172, 72}, {172, 112}, 32, 0, 0, 0, 0},
@@ -121,50 +140,48 @@ sector sectorslist[MAXSECTORS] = {
         .neighboring_sectors = {3, },
         .portal_inds = {1, },
         .wall_inds = {0, 2, 3, 4, 5, },
+        .z1 = 0,
+        .z2 = 32,
     },
-    
 
-    /* sectors will now be portals */
-    /* if sectors are "full sectors" -> then everything is normal */
-    /* sectors must be defined in a clockwise order */
-
-
-    /* ORIGINAL MAP */
-
-    // {
-    //     .num_linedef = 6,
-    //     .num_wall = 5,
-    //     .lines = {
-    //         {{-32, -32}, {0, -64}, 32, 0, 0, 0, 0}, 
-    //         {{0, -64}, {48, -32}, 32, 0, 0, 0, 0}, 
-    //         {{48, -32}, {16, 32}, 32, 0, 0, 0, 0}, 
-    //         {{16, 32}, {-16, 48}, 32, 0, 1, 24, 8}, 
-    //         {{-16, 48}, {-48, 16}, 32, 0, 0, 0, 0}, 
-    //         {{-48, 16}, {-32, -32}, 32, 0, 0, 0, 0},
-    //     },
-    //     .neighboring_sectors = {1},
-    //     .portal_inds = {3},
-    //     .wall_inds = {0, 1, 2, 4, 5},
-    // },
-
-    // {
-    //     .num_linedef = 4,
-    //     .num_wall = 3,
-    //     .lines = {
-    //         {{16, 32}, {-16, 48}, 32, 0, 1, 24, 8},
-    //         {{16, 32}, {32, 64}, 32, 0, 0, 0, 0},
-    //         {{0, 80}, {32, 64}, 32, 0, 0, 0, 0},
-    //         {{-16, 48}, {0, 80}, 32, 0, 0, 0, 0},
-    //     },
-    //     .neighboring_sectors = {0},
-    //     .portal_inds = {0},
-    //     .wall_inds = {1, 2, 3},
-    // }
 };
 
-int portalsize = 0;
+// vec2d mapvertices[20] = {
+//     // --------------- sector 0
+//     {0, 0}, // 0
+//     {128, 0}, // 1
+//     {128, 16}, // 2 portal: {0 - 1}
+//     {128, 56}, // 3 portal: {0 - 1}
+//     {128, 64}, // 4
+//     {0, 64}, // 5
+
+//     // --------------- sector 1
+//     {160, 16}, // 6
+//     {160, 32}, // 7 portal: {1 - 2}
+//     {160, 48}, // 8 portal: {1 - 2}
+//     {160, 56}, // 9
+//     {152, 56}, // 10 portal: {1 - 3}
+//     {136, 56}, // 11 portal: {1 - 3}
+
+//     // --------------- sector 2
+//     {192, 32}, // 12
+//     {192, 48}, // 13
+
+//     // --------------- sector 3
+//     {152, 72}, // 14 portal: {3 - 4}
+//     {136, 72}, // 15 portal: {3 - 4}
+
+//     // --------------- sector 4
+//     {172, 72}, // 16
+//     {172, 112}, // 17
+//     {96, 112}, // 18
+//     {96, 72} // 19
+// };
+
+sector sectorslist[MAXSECTORS];
 
 int main(void) {
+
     /* window */
     char* windowtitle = (char*) malloc(sizeof(char) * TITLELENGTH);
     
@@ -175,7 +192,8 @@ int main(void) {
 
     /* camera */
     P_PlayerState playerstate = P_InitializePlayerState();
-    E_GameEntity playerentity = {.x = 0, .y = 0, .z = 0, .w = 16, .h = 16};
+    E_GameEntity playerentity = {.x = 32, .y = 32, .z = 0, .w = 2, .h = 16};
+    float xprevious, yprevious;
 
     int resolution = 320;
 
@@ -296,7 +314,7 @@ int main(void) {
                     if (playerstate.sector_id > 4) {
                         playerstate.sector_id = 0;
                     }
-                    printf("%d\n", playerstate.sector_id);
+                    printf("%lu\n", playerstate.sector_id);
                 }
             } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
                 double mousexmove = -event.motion.xrel/10;
@@ -313,7 +331,7 @@ int main(void) {
          * LOGIC *
          *********/
 
-        /* capping */
+        /* z-look capping */
         if (playerstate.zlook > playerstate.max_zlook) {
             playerstate.zlook = playerstate.max_zlook;
         } 
@@ -332,12 +350,53 @@ int main(void) {
             playerstate.zlook = 0;
         }
 
+        xprevious = playerentity.x;
+        yprevious = playerentity.y;
+
         /* collisions */
+        vec2d line_projection;
+        char collided = 0;
+        for (int i = 0; i < sectorslist[playerstate.sector_id].num_linedef; i ++) {
+
+            float px, py;
+            px = playerentity.x + playerentity.hsp;
+            py = playerentity.y + playerentity.vsp;
+
+            linedef l = sectorslist[playerstate.sector_id].lines[i];
+
+            collided = pointcircle(l.a.x, l.a.y, l.b.x, l.b.y, px, py, playerentity.h);
+
+            if (collided) {
+                // collided = 1; 
+                vec2d playermovement = {playerentity.hsp, playerentity.vsp};
+                line_projection = projection(playermovement, ldeftovec(l));
+                playerentity.hsp = line_projection.x;
+                playerentity.vsp = line_projection.y;
+            }
+
+            /* OLD COLLISION CODE -> may be used for crossing linedefs / portals */
+            // float x1, x2, x3, x4, y1, y2, y3, y4;
+            // x1 = l.a.x, x2 = l.b.x, x3 = playerentity.x, x4 = playerentity.x + playerentity.hsp;
+            // y1 = l.a.y, y2 = l.b.y, y3 = playerentity.y, y4 = playerentity.y + playerentity.vsp;
+
+            // float uA = ((x4-x3)*(y1-y3) - (y4-y3)*(x1-x3)) / ((y4-y3)*(x2-x1) - (x4-x3)*(y2-y1));
+            // float uB = ((x2-x1)*(y1-y3) - (y2-y1)*(x1-x3)) / ((y4-y3)*(x2-x1) - (x4-x3)*(y2-y1));
+
+            // if (uA >= 0 && uA <= 1 && uB >= 0 && uB <= 1 && !l.isPortal) {  // 0 - 1
+            //     // collided = 1; 
+            //     vec2d playermovement = {playerentity.hsp, playerentity.vsp};
+            //     line_projection = projection(playermovement, ldeftovec(l));
+            //     playerentity.hsp = line_projection.x;
+            //     playerentity.vsp = line_projection.y;
+            // }
+
+        }
+
         playerentity.x += playerentity.hsp;
         playerentity.y += playerentity.vsp;
         playerentity.z += (key_states[SDL_SCANCODE_SPACE] - key_states[SDL_SCANCODE_LSHIFT]);
 
-        /* plane maths */
+
 
         /**********
          RENDERING  
@@ -356,7 +415,6 @@ int main(void) {
         for (int i = 0; i < renderWidth * renderHeight; i ++) {
             pixels[i] = 0x0000;
             filled[i] = 0;
-            // portalfill[i] = 0;
         }
 
         /* resetting the portals */
@@ -370,7 +428,6 @@ int main(void) {
 
 
         /* drawing maplines */
-
         double c = cos(deg2rad(-playerstate.direction));
         double s = sin(deg2rad(-playerstate.direction));
 
@@ -477,13 +534,16 @@ int main(void) {
                         double heightA = renderHeight / (pA.y / 25 + 0.01);
                         double heightB = renderHeight / (pB.y / 25 + 0.01);
                         
-                        double x1, x2, y11, y12, y21, y22;
+                        double x1, x2, y11, y12, y21, y22, y13, y23;
                         x1 = pA.x;
                         x2 = pB.x;
 
 
-                        float bottomDeltaA = ((float) (playerentity.z - line.z2) / tilesize) * heightA;
-                        float bottomDeltaB = ((float) (playerentity.z - line.z2) / tilesize) * heightB;
+                        float bottomDeltaA = ((float) (playerentity.z - line.z2 - sectorslist[sector_id].z1) / tilesize) * heightA;
+                        float bottomDeltaB = ((float) (playerentity.z - line.z2 - sectorslist[sector_id].z1) / tilesize) * heightB;
+
+                        float cutoffDeltaA = ((float) (playerentity.z - line.z2) / tilesize) * heightA;
+                        float cutoffDeltaB = ((float) (playerentity.z - line.z2) / tilesize) * heightB;
 
                         float topDeltaA = ((float) (line.z1 - playerentity.z) / tilesize - 1.0) * heightA;
                         float topDeltaB = ((float) (line.z1 - playerentity.z) / tilesize - 1.0) * heightB;
@@ -493,6 +553,9 @@ int main(void) {
 
                         y21 = renderHeight/2 - heightB/2 - playerstate.zlook - topDeltaB;
                         y22 = renderHeight/2 + heightB/2 - playerstate.zlook + bottomDeltaB;
+
+                        y13 = renderHeight/2 + heightA/2 - playerstate.zlook + cutoffDeltaA;
+                        y23 = renderHeight/2 + heightB/2 - playerstate.zlook + cutoffDeltaB;
 
                         if (x1 > x2) {
                             double temp = x1;
@@ -509,12 +572,15 @@ int main(void) {
                         }
 
                         R_RenderWall(pixels, filled, pnum, renderWidth, renderHeight, x1, x2, y11, y12, y21, y22, 1, 1, 1, 1, line);
+                        R_RenderWall(pixels, filled, pnum, renderWidth, renderHeight, x1, x2, y12, y13, y22, y23, 0, 0, 0, 0, line);
                     }
                 }
             }
 
             /* drawing all the portals */
             for (int i = 0; i < sectorslist[sector_id].num_linedef - sectorslist[sector_id].num_wall; i ++) { 
+
+                /* sector  */
                 linedef line = sectorslist[sector_id].lines[sectorslist[sector_id].portal_inds[i]];
 
                 line.a.x -= playerentity.x;
@@ -611,12 +677,15 @@ int main(void) {
                         double heightA = renderHeight / (pA.y / 25 + 0.01);
                         double heightB = renderHeight / (pB.y / 25 + 0.01);
                         
-                        double x1, x2, y11, y12, y21, y22, yportal11, yportal12, yportal21, yportal22;
+                        double x1, x2, y11, y12, y21, y22, y13, y23, yportal11, yportal12, yportal21, yportal22;
                         x1 = pA.x;
                         x2 = pB.x;
 
-                        float bottomDeltaA = ((float) (playerentity.z - line.z2) / tilesize) * heightA;
-                        float bottomDeltaB = ((float) (playerentity.z - line.z2) / tilesize) * heightB;
+                        float bottomDeltaA = ((float) (playerentity.z - line.z2 - sectorslist[sector_id].z1) / tilesize) * heightA;
+                        float bottomDeltaB = ((float) (playerentity.z - line.z2 - sectorslist[sector_id].z1) / tilesize) * heightB;
+
+                        float bottomCutoffA = ((float) (playerentity.z - line.z2) / tilesize) * heightA;
+                        float bottomCutoffB = ((float) (playerentity.z - line.z2) / tilesize) * heightB;
 
                         float topDeltaA = ((float) (line.z1 - playerentity.z) / tilesize - 1.0) * heightA;
                         float topDeltaB = ((float) (line.z1 - playerentity.z) / tilesize - 1.0) * heightB;
@@ -640,6 +709,9 @@ int main(void) {
                         y21 = renderHeight/2 - heightB/2 - playerstate.zlook - topDeltaB;
                         y22 = renderHeight/2 + heightB/2 - playerstate.zlook + bottomDeltaB;
 
+                        y13 = renderHeight/2 + heightA/2 - playerstate.zlook + bottomCutoffA;
+                        y23 = renderHeight/2 + heightB/2 - playerstate.zlook + bottomCutoffB;
+
                         if (x1 > x2) {
                             double temp = x1;
                             x1 = x2;
@@ -656,14 +728,26 @@ int main(void) {
 
                         R_RenderWall(pixels, filled, pnum, renderWidth, renderHeight, x1, x2, y11, yportal11, y21, yportal21, 1, 1, 1, 1, line);
                         R_RenderWall(pixels, filled, pnum, renderWidth, renderHeight, x1, x2, yportal12, y12, yportal22, y22, 1, 1, 1, 1, line);
+                        R_RenderWall(pixels, filled, pnum, renderWidth, renderHeight, x1, x2, y12, y13, y22, y23, 0, 0, 0, 0, line);
 
                         size_t ind = hash(line) % 1024;
-                        if (!portaltable[ind]) {
+                        size_t ind2 = hash2(line) % 1024;
+                        if (!(portaltable[ind] && portaltable[ind2])) { /* if the portal isn't in the table already, then move */
                             portals[portals_ln ++] = (wallsegment) {.portal_id = sectorslist[sector_id].neighboring_sectors[i], .x1 = x1, .x2 = x2, .y11 = yportal11, y12 = yportal12, y21 = yportal21, y22 = yportal22};
                             portaltable[ind] = 1;
+                            portaltable[ind2] = 1;
                         }
                     }
                 }
+
+                int depth_a = line.a.x;
+                int depth_b = line.b.x;
+
+                // int side_a = (line.a.y < line.b.y) ? line.a.y : line.b.y;
+                // int side_b = (line.a.y < line.b.y) ? line.b.y : line.a.y;
+                // if ((depth_a < 0 || depth_b < 0) && (side_a < 0 && side_b > 0)) {
+                //     playerstate.wish_sector_id = sectorslist[sector_id].neighboring_sectors[i];
+                // }
             }
             /* load in more sectors */
             for (int p = 0; p < portals_ln; p ++) {
@@ -678,6 +762,10 @@ int main(void) {
         // for (int i = 0; i < renderWidth * renderHeight; i ++) {
         //     if (filled[i]) pixels[i] = 0xff00ffff;
         // }
+
+        if (playerstate.sector_id != playerstate.wish_sector_id) {
+            playerstate.sector_id = playerstate.wish_sector_id;
+        }
 
         if (map) {
             SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);

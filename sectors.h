@@ -30,6 +30,8 @@ typedef struct {
     int portal_inds[MAXPORTALSINONESECTOR]; /* indices of all portals */
     int wall_inds[MAXSECTORLINEDEF]; /* indices of all walls */
     linedef lines[MAXSECTORLINEDEF]; /* flexible array members must be malloc'd */
+    int z1;
+    int z2;
 } sector;
 
 #endif

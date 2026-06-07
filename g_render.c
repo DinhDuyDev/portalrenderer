@@ -39,8 +39,8 @@ void R_RenderWall(u_int32_t *pixbuff, u_int8_t* filled, int pnum, int w, int h, 
 
             // int dist_from_projection = 0; 
             // dist_from_projection += (modified.a.x + ((modified.b.x - modified.a.x) * ratio));
-
-            for (int i = y0; i <= y1; i ++) {
+            int i;
+            for (i = y0; i <= y1; i ++) {
                 if (i >= 0 && i < h) {
                     if (filled[i * pnum + x_ptr] == 0) {//dist_from_projection) {
                     int t, b, l, r;
@@ -63,6 +63,7 @@ void R_RenderWall(u_int32_t *pixbuff, u_int8_t* filled, int pnum, int w, int h, 
                     if (i < 0) i = 0;
                 }
             }
+
         } else {
             if (x_ptr < 0) {
                 x_ptr = 0;
