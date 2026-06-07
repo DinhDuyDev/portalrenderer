@@ -15,7 +15,8 @@ typedef struct {
     float fovratio;
     float fov_mult;
     double direction;
-    u_int16_t sector_id;
+    size_t sector_id;
+    size_t wish_sector_id;
 } P_PlayerState;
 
 double fovratio;
@@ -40,5 +41,6 @@ P_PlayerState P_InitializePlayerState()
     p.direction = 0.0;
 
     p.sector_id = 0;
+    p.wish_sector_id = 0;
     return p;
 }
